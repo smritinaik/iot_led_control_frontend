@@ -1,56 +1,124 @@
-# Welcome to your Expo app 👋
+<p align="center">
+  <img src="./assets/banner.png" alt="Blinky - Remote LED Controller banner" width="100%" />
+</p>
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+# Blinky - Remote LED Controller
 
-## Get started
+A playful mobile app that turns an LED on and off through an ESP32. Connect straight to the ESP32's own Wi-Fi, or control it from anywhere in the world over the internet.
 
-1. Install dependencies
+Blinky is a cute googly-eyed bot that shows the LED's mood: glowing when it's on, sleepy when it's off, and lost when it can't find the ESP32.
 
-   ```bash
-   npm install
-   ```
+## Features
 
-2. Start the app
+- **LED ON / OFF buttons** with a live connection status indicator
+- **Wi-Fi mode:** the phone connects directly to the ESP32's own network. No router or internet needed.
+- **Remote mode:** control the LED from anywhere through a small cloud server
+- **Animated bot** that reacts to the LED and connection state
+- Built from scratch: no third-party IoT platforms, dashboards or app templates
 
-   ```bash
-   npx expo start
-   ```
+## How it works
 
-In the output, you'll find options to open the app in a
+```
+Wi-Fi mode:    Phone ──(ESP32_LED Wi-Fi)──► ESP32 ──► LED
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **src/app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
+Remote mode:   Phone ──(internet)──► Server ◄──(asks every 2 s)── ESP32 ──► LED
 ```
 
-This command will move the starter code to the **example** directory and create a blank **src/app** directory where you can start developing.
+- In **Wi-Fi mode**, the ESP32 creates its own access point (`ESP32_LED`) and runs a tiny web server at `192.168.4.1`. The app sends `/on`, `/off` and `/status` requests to it.
+- In **Remote mode**, the app sends the command to a Node.js server. The ESP32 checks the server every 2 seconds and applies the new state.
 
-### Other setup steps
+## Hardware
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+- ESP32 DevKit
+- 1 LED
+- 1 resistor (220 Ω)
+- Jumper wires
 
-## Learn more
+**Wiring**
 
-To learn more about developing your project with Expo, look at the following resources:
+```
+ESP32 pin D23 ──► 220 Ω resistor ──► LED long leg (+)
+ESP32 pin GND ◄──────────────────── LED short leg (-)
+```
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+## Tech stack
 
-## Join the community
+- **App:** React Native, Expo (Expo Router), TypeScript
+- **Device:** ESP32 with the Arduino framework
+- **Server:** Node.js, Express (hosted on Render)
 
-Join our community of developers creating universal apps.
+## Project structure
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+```
+led_controller/
+├── src/app/index.tsx    # The whole app screen and logic
+├── app.json             # Expo config (allows plain HTTP for Wi-Fi mode)
+├── assets/              # Icons and banner
+└── README.md
+```
+
+The server lives in its own repo (`led-server`) with a single `server.js` file.
+
+## Getting started
+
+### 1. ESP32
+
+1. Open the sketch in the Arduino IDE and choose the **ESP32 Dev Module** board.
+2. Set your home Wi-Fi name and password, the server URL and the secret key.
+3. Upload it. If the upload fails, lower **Tools → Upload Speed** to `115200`.
+
+### 2. Server
+
+1. Push `server.js` and `package.json` to a GitHub repo.
+2. Create a **Web Service** on Render with build command `npm install` and start command `npm start`.
+3. Add an environment variable `LED_KEY` with your own secret word.
+
+### 3. App
+
+```
+npm install
+npx expo start
+```
+
+Scan the QR code with Expo Go to try it. Wi-Fi mode only works in a built APK.
+
+In `src/app/index.tsx`, set:
+
+```ts
+const SERVER = 'https://your-app.onrender.com';
+const KEY = 'your-secret-word';
+```
+
+### 4. Build the APK
+
+```
+eas build -p android --profile preview
+```
+
+## Settings that must match
+
+| Setting | Where |
+|---|---|
+| Secret key | App `KEY`, ESP32 sketch `KEY`, Render `LED_KEY` |
+| Server address | App `SERVER`, ESP32 sketch `SERVER_URL` (ends with `/api/device`) |
+
+## Using the app
+
+- **Wi-Fi mode:** join the `ESP32_LED` network, turn off mobile data, tap **Keep Wi-Fi** if Android asks, then open the app.
+- **Remote mode:** use any internet connection. The ESP32 must be powered and connected to its home Wi-Fi.
+
+## Troubleshooting
+
+- **"I can't find you" in Wi-Fi mode:** check that the phone is on `ESP32_LED` with mobile data off. Test `http://192.168.4.1/status` in the phone browser.
+- **"I can't find you" in Remote mode:** open `https://your-app.onrender.com/api/status`. If it shows `"online":false`, the ESP32 isn't reaching the server.
+- **Wi-Fi mode works in Expo Go but not in the APK:** make sure `expo-build-properties` with `usesCleartextTraffic` is in `app.json`, then rebuild.
+- **ESP32 upload error:** use a data USB cable and a lower upload speed.
+
+## Notes
+
+- The APK is Android only. iPhone users can open `http://192.168.4.1` in a browser while connected to `ESP32_LED`.
+- The secret key is inside the app, so this is a demo-level setup, not production security.
+
+## Author
+
+Built by Smriti Naik.
