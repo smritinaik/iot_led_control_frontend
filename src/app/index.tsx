@@ -15,7 +15,7 @@ const TIMEOUT_MS = 2000;
 
 // ***********************************************************************************************************
 //************************************************************************************************************
-const SERVER = 'https://led-controller-vwkm.onrender.com';
+const SERVER = 'https://iot-led-control-server.onrender.com';
 const KEY = 'blinky-smriti-7421';
 const REMOTE_TIMEOUT_MS = 8000;
 
