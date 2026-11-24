@@ -6,6 +6,7 @@
     "@expo-google-fonts/nunito": "^0.4.2",
     "@expo/ui": "~58.0.29",
     "expo": "~58.0.26",
+    "expo-build-properties": "~58.0.12",
     "expo-constants": "~58.0.16",
     "expo-device": "~58.0.5",
     "expo-font": "~58.0.12",

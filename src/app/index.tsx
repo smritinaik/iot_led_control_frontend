@@ -13,9 +13,15 @@ const SSID = 'ESP32_LED';
 const POLL_MS = 2000;
 const TIMEOUT_MS = 2000;
 
+// ***********************************************************************************************************
+//************************************************************************************************************
+const SERVER = 'https://led-controller-vwkm.onrender.com';
+const KEY = 'blinky-smriti-7421';
+const REMOTE_TIMEOUT_MS = 8000;
+
 type Conn = 'checking' | 'connected' | 'disconnected';
 type LedState = 'ON' | 'OFF';
-type Mode = 'live' | 'simulated';
+type Mode = 'live' | 'remote';
 type Mood = 'happy' | 'sleepy' | 'lost' | 'looking';
 
 // ---------- Theme ----------
@@ -27,6 +33,7 @@ const C = {
 };
 const F = { semi: 'Nunito_600SemiBold', bold: 'Nunito_700Bold', heavy: 'Nunito_800ExtraBold' };
 
+// Direct to the ESP32 over its own Wi-Fi
 async function esp(path: string): Promise<string> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
@@ -34,6 +41,29 @@ async function esp(path: string): Promise<string> {
     const res = await fetch(ESP_BASE + path, { signal: ctrl.signal });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     return (await res.text()).trim();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Through the internet server
+async function remote(path: string): Promise<string> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), REMOTE_TIMEOUT_MS);
+  try {
+    const res =
+      path === '/status'
+        ? await fetch(`${SERVER}/api/status`, { signal: ctrl.signal })
+        : await fetch(`${SERVER}/api/led`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-key': KEY },
+            body: JSON.stringify({ state: path === '/on' ? 'ON' : 'OFF' }),
+            signal: ctrl.signal,
+          });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if (!data.online) throw new Error('ESP32 offline');
+    return data.led;
   } finally {
     clearTimeout(timer);
   }
@@ -191,17 +221,11 @@ export default function App() {
   const [now, setNow] = useState(Date.now());
   const [error, setError] = useState<string | null>(null);
 
-  const simLed = useRef<LedState>('OFF');
   const polling = useRef(false);
 
   const request = useCallback(
     async (path: string): Promise<string> => {
-      if (mode === 'simulated') {
-        await new Promise((r) => setTimeout(r, 250));
-        if (path === '/on') simLed.current = 'ON';
-        if (path === '/off') simLed.current = 'OFF';
-        return simLed.current;
-      }
+      if (mode === 'remote') return remote(path);
       return esp(path);
     },
     [mode]
@@ -259,9 +283,9 @@ export default function App() {
       setConn('disconnected');
       setLed(null);
       setError(
-        mode === 'live'
-          ? `Could not reach the ESP32. Join the ${SSID} Wi-Fi and try again.`
-          : 'Simulated request failed.'
+        mode === 'remote'
+          ? 'Could not reach the ESP32 over the internet. Is it powered and on home Wi-Fi?'
+          : `Could not reach the ESP32. Join the ${SSID} Wi-Fi and try again.`
       );
     } finally {
       setBusy(false);
@@ -278,12 +302,9 @@ export default function App() {
   const mood: Mood =
     conn === 'disconnected' ? 'lost' : conn === 'checking' ? 'looking' : led === 'ON' ? 'happy' : 'sleepy';
 
-  const lastReplyText =
-    lastReply === null ? '-' : `${Math.max(0, Math.round((now - lastReply) / 1000))} s ago`;
-
   const pill =
     conn === 'connected'
-      ? { dot: C.lime, label: mode === 'live' ? 'ESP32 connected' : 'Practice link' }
+      ? { dot: C.lime, label: 'ESP32 connected' }
       : conn === 'checking'
       ? { dot: C.yellow, label: 'Checking link' }
       : { dot: C.red, label: 'Not connected' };
@@ -297,6 +318,7 @@ export default function App() {
     mood === 'happy' ? 'The LED is on.'
     : mood === 'sleepy' ? 'The LED is off. Tap LED ON to wake me.'
     : mood === 'looking' ? 'Searching for the ESP32...'
+    : mode === 'remote' ? 'Waiting for the ESP32 to come online...'
     : `Join the ${SSID} Wi-Fi, then come back.`;
 
   const showWifi = mode === 'live' && conn === 'disconnected' && Platform.OS === 'android';
@@ -320,7 +342,7 @@ export default function App() {
         {/* Hero */}
         <View style={s.hero}>
           <View style={s.tag}>
-            <Text style={s.tagText}>{mode === 'live' ? 'Live control' : 'Practice mode'}</Text>
+            <Text style={s.tagText}>{mode === 'live' ? 'Wi-Fi control' : 'Remote control'}</Text>
           </View>
 
           <Bot mood={mood} />
@@ -374,7 +396,25 @@ export default function App() {
           </View>
         </View>
 
-        <Text style={s.footnote}>No router or internet needed. Tap the bot to say hi.</Text>
+        {/* Mode switch */}
+        <View style={s.card}>
+          <Text style={s.cardTitle}>Control mode</Text>
+          <View style={s.segment}>
+            <Pressable onPress={() => setMode('live')} style={[s.segItem, mode === 'live' && s.segActive]}>
+              <Text style={[s.segText, mode === 'live' && s.segTextActive]}>Wi-Fi</Text>
+            </Pressable>
+            <Pressable onPress={() => setMode('remote')} style={[s.segItem, mode === 'remote' && s.segActive]}>
+              <Text style={[s.segText, mode === 'remote' && s.segTextActive]}>Remote</Text>
+            </Pressable>
+          </View>
+          <Text style={s.hint}>
+            {mode === 'live'
+              ? 'Wi-Fi talks straight to the ESP32 over its own network. No router or internet needed.'
+              : 'Remote works from anywhere with internet, through the server.'}
+          </Text>
+        </View>
+
+        <Text style={s.footnote}>Tap the bot to say hi.</Text>
       </ScrollView>
     </View>
   );
@@ -484,6 +524,18 @@ const s = StyleSheet.create({
   stat: { flex: 1, borderRadius: 30, padding: 18, minHeight: 104, justifyContent: 'center' },
   statValue: { fontFamily: F.heavy, fontSize: 26, color: C.ink },
   statLabel: { fontFamily: F.semi, fontSize: 14, color: C.muted, marginTop: 2 },
+
+  card: {
+    backgroundColor: C.white, borderRadius: 32, padding: 20, marginBottom: 14,
+    borderWidth: 6, borderColor: C.limeFrame,
+  },
+  cardTitle: { fontFamily: F.bold, fontSize: 16, color: C.muted, marginBottom: 10 },
+  segment: { flexDirection: 'row', backgroundColor: '#EEF6E2', borderRadius: 999, padding: 4, marginBottom: 12 },
+  segItem: { flex: 1, paddingVertical: 12, borderRadius: 999, alignItems: 'center' },
+  segActive: { backgroundColor: C.ink },
+  segText: { fontFamily: F.heavy, fontSize: 14, color: C.muted },
+  segTextActive: { color: C.lime },
+  hint: { fontFamily: F.semi, fontSize: 13, color: C.muted, lineHeight: 19 },
 
   footnote: { fontFamily: F.semi, fontSize: 12, color: C.muted, textAlign: 'center', marginTop: 6 },
 });
